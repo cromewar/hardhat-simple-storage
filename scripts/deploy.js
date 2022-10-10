@@ -1,31 +1,58 @@
-// We require the Hardhat Runtime Environment explicitly here. This is optional
-// but useful for running the script in a standalone fashion through `node <script>`.
-//
-// You can also run a script with `npx hardhat run <script>`. If you do that, Hardhat
-// will compile your contracts, add the Hardhat Runtime Environment's members to the
-// global scope, and execute the script.
-const hre = require("hardhat");
-
+// imports
+const { ethers, run, network } = require("hardhat")
+// async main
 async function main() {
-  const currentTimestampInSeconds = Math.round(Date.now() / 1000);
-  const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
-  const unlockTime = currentTimestampInSeconds + ONE_YEAR_IN_SECS;
+	const SimpleStorageFactory = await ethers.getContractFactory(
+		"SimpleStorage"
+	)
+	// Deploy the contract
+	// Hardhat has it's own local network with accounts so neither the RPC provider and the account are needed
+	console.log("deploying contract...")
+	const simpleStorage = await SimpleStorageFactory.deploy()
+	await simpleStorage.deployed()
+	console.log(`Deployed contract to ${simpleStorage.address}`)
+	// Verify the contract
+	// if network is localhost, we don't need to verify
+	if (network.config.chainId === 5 && process.env.ETHERSCAN_API_KEY) {
+		// Is preferable to wait some blocks before verifying the contract
+		await simpleStorage.deployTransaction.wait(5)
+		await verify(simpleStorage.address, [])
+	}
 
-  const lockedAmount = hre.ethers.utils.parseEther("1");
+	// Interact with the contract
+	const currentValue = await simpleStorage.retrieve()
+	console.log(`Current Value: ${currentValue}`)
 
-  const Lock = await hre.ethers.getContractFactory("Lock");
-  const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
-
-  await lock.deployed();
-
-  console.log(
-    `Lock with 1 ETH and unlock timestamp ${unlockTime} deployed to ${lock.address}`
-  );
+	// update the current value
+	const transactionResponse = await simpleStorage.store(7)
+	await transactionResponse.wait(1)
+	const updatedValue = await simpleStorage.retrieve()
+	console.log(`Updated Value: ${updatedValue}`)
 }
 
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+async function verify(contractAddress, args) {
+	console.log("Verifying contract...")
+	// we can run any hardhat packages with run
+	// sometimes the contract ABI is the exact same as another already verified contract
+	// so we use a try catch to ignore the error
+	try {
+		await run("verify:verify", {
+			address: contractAddress,
+			constructorArguments: args,
+		})
+	} catch (e) {
+		if (e.message.toLowerCase().includes("already verified")) {
+			console.log("Contract already verified")
+		} else {
+			console.log(e)
+		}
+	}
+}
+
+// main
+main()
+	.then(() => process.exit(0))
+	.catch((error) => {
+		console.error(error)
+		process.exit(1)
+	})
