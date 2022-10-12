@@ -9,3 +9,5 @@ typechain-types
 cache
 artifacts
 
+# gas preot
+gas-report.txt
